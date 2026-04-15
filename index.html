@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>施錠管理システム - 同期版</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f4f0; --surface: #ffffff; --border: rgba(0,0,0,0.10);
+    --border-strong: rgba(0,0,0,0.18); --text: #1a1a18;
+    --text-secondary: #6b6b66; --text-hint: #a0a09a;
+    --red-bg: #fdf0f0; --red-border: #f5c0c0; --red-text: #7a1f1f; --red-accent: #c53030;
+    --green-bg: #f0f7ec; --green-border: #b8dda0; --green-text: #2a5a14; --green-accent: #3d7a1a;
+    --radius: 14px; --radius-sm: 8px;
+  }
+  body { font-family: 'Noto Sans JP', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+  .header-title { font-size: 14px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0.04em; }
+  #login-btn { background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 6px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+  #login-btn.active { background: var(--text); color: var(--surface); border-color: var(--text); }
+  main { flex: 1; padding: 2rem 1.25rem; max-width: 480px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 1rem; }
+  .hero { border-radius: var(--radius); padding: 3rem 2rem 2.5rem; text-align: center; border: 1px solid transparent; transition: all 0.4s; }
+  .hero.locked { background: var(--red-bg); border-color: var(--red-border); }
+  .hero.unlocked { background: var(--green-bg); border-color: var(--green-border); }
+  .hero-icon-wrap { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 1.25rem; display: flex; align-items: center; justify-content: center; }
+  .hero.locked .hero-icon-wrap { background: var(--red-border); }
+  .hero.unlocked .hero-icon-wrap { background: var(--green-border); }
+  .hero-label { font-size: 42px; font-weight: 700; margin-bottom: 0.5rem; }
+  .hero.locked .hero-label { color: var(--red-text); }
+  .hero.unlocked .hero-label { color: var(--green-text); }
+  .hero-desc { font-size: 14px; }
+  .hero.locked .hero-desc { color: var(--red-accent); }
+  .hero.unlocked .hero-desc { color: var(--green-accent); }
+  .overlay-wrap { background: rgba(20,20,18,0.30); border-radius: var(--radius); padding: 2rem 1.25rem; display: flex; align-items: center; justify-content: center; min-height: 340px; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.75rem 1.5rem; width: 100%; max-width: 300px; }
+  .dots { display: flex; gap: 14px; justify-content: center; margin-bottom: 1.25rem; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--border-strong); }
+  .dot.filled { background: var(--text); border-color: var(--text); }
+  .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .key { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 13px; font-family: 'DM Mono', monospace; cursor: pointer; text-align: center; }
+  .key:active { transform: scale(0.93); }
+  .change-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1rem; }
+  .opt-btn { border-radius: var(--radius-sm); padding: 1.1rem 0.75rem; text-align: center; cursor: pointer; border: 1.5px solid transparent; }
+  .opt-btn.selected { border-width: 2px; }
+  .lock-opt { background: var(--red-bg); border-color: var(--red-border); }
+  .lock-opt.selected { border-color: var(--red-accent); }
+  .unlock-opt { background: var(--green-bg); border-color: var(--green-border); }
+  .unlock-opt.selected { border-color: var(--green-accent); }
+  .footer-time { font-size: 12px; color: var(--text-hint); text-align: center; font-family: 'DM Mono', monospace; padding-bottom: 1rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="header-title">施錠管理システム</span>
+  <button id="login-btn" onclick="toggleLogin()">管理者ログイン</button>
+</header>
+
+<main>
+  <div class="hero locked" id="hero">
+    <div class="hero-icon-wrap" id="hero-icon-area"></div>
+    <div class="hero-label" id="hero-label">読み込み中...</div>
+    <div class="hero-desc" id="hero-desc">状態を確認しています</div>
+  </div>
+  <div id="panel-area"></div>
+  <div class="footer-time" id="footer-time">最終更新: —</div>
+</main>
+
+<script>
+const PASS = '8112';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbynrsLXBycN_HuULMTsc4yRqx7MIeLgJ7X5IiMHEGLrHmxvJ5pUJLFs12EwMIhdflsvFg/exec'; 
+
+let status = 'locked';
+let pinInput = '';
+let loginVisible = false;
+let loggedIn = false;
+
+// サーバーから同期
+async function syncFromServer() {
+  try {
+    const res = await fetch(`${GAS_URL}?t=${new Date().getTime()}`);
+    const data = await res.json();
+    if (status !== data.status) {
+      status = data.status;
+      updateHero();
+      if (loggedIn) render(); 
+    }
+    if (data.time) document.getElementById('footer-time').textContent = '最終更新: ' + data.time;
+  } catch (e) { console.error("Sync Error", e); }
+}
+
+// 状態保存
+async function setStatus(s) {
+  status = s;
+  updateHero();
+  render();
+  const timeStr = new Date().toLocaleString('ja-JP', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+  try {
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: s, time: timeStr })
+    });
+    document.getElementById('footer-time').textContent = '最終更新: ' + timeStr;
+  } catch (e) { console.error("Save Error", e); }
+}
+
+function updateHero() {
+  const hero = document.getElementById('hero');
+  const label = document.getElementById('hero-label');
+  const desc = document.getElementById('hero-desc');
+  const iconArea = document.getElementById('hero-icon-area');
+  hero.className = 'hero ' + status;
+  if (status === 'locked') {
+    label.textContent = '施錠中';
+    desc.textContent = 'ドアは現在ロックされています';
+    iconArea.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" fill="none"><rect x="8" y="17" width="22" height="16" rx="3" fill="#c53030"/><path d="M13 17V13a6 6 0 0 1 12 0v4" stroke="#c53030" stroke-width="2.5" stroke-linecap="round"/><circle cx="19" cy="25" r="2.5" fill="white"/></svg>`;
+  } else {
+    label.textContent = '開錠中';
+    desc.textContent = 'ドアは現在開いています';
+    iconArea.innerHTML = `<svg width="38" height="38" viewBox="0 0 38 38" fill="none"><rect x="8" y="17" width="22" height="16" rx="3" fill="#3d7a1a"/><path d="M13 17V13a6 6 0 0 1 12 0v4" stroke="#b8dda0" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/><circle cx="19" cy="25" r="2.5" fill="white"/></svg>`;
+  }
+}
+
+function toggleLogin() {
+  if (loggedIn) { doLogout(); return; }
+  loginVisible = !loginVisible;
+  render();
+}
+
+function doLogout() {
+  loggedIn = false; loginVisible = false;
+  document.getElementById('login-btn').textContent = '管理者ログイン';
+  document.getElementById('login-btn').classList.remove('active');
+  render();
+}
+
+function press(n) {
+  if (pinInput.length >= 4) return;
+  pinInput += n;
+  syncDots();
+  if (pinInput.length === 4) {
+    if (pinInput === PASS) {
+      loggedIn = true; loginVisible = false;
+      document.getElementById('login-btn').textContent = 'ログアウト';
+      document.getElementById('login-btn').classList.add('active');
+      render();
+    } else {
+      document.getElementById('pin-err').textContent = 'コードが違います';
+      pinInput = ''; setTimeout(syncDots, 500);
+    }
+  }
+}
+
+function syncDots() {
+  for (let i = 0; i < 4; i++) {
+    const d = document.getElementById('d' + i);
+    if (d) d.classList.toggle('filled', i < pinInput.length);
+  }
+}
+
+function render() {
+  const area = document.getElementById('panel-area');
+  if (loggedIn) {
+    area.innerHTML = `
+      <div class="change-panel">
+        <div style="display:flex; justify-content:space-between; font-size:14px;"><span>状態を変更</span><a onclick="doLogout()" style="cursor:pointer; color:var(--text-secondary);">終了</a></div>
+        <div class="options">
+          <div class="opt-btn lock-opt ${status==='locked'?'selected':''}" onclick="setStatus('locked')">🔒 施錠</div>
+          <div class="opt-btn unlock-opt ${status==='unlocked'?'selected':''}" onclick="setStatus('unlocked')">🔓 開錠</div>
+        </div>
+      </div>`;
+  } else if (loginVisible) {
+    pinInput = '';
+    area.innerHTML = `<div class="overlay-wrap"><div class="modal-box">
+      <div style="text-align:center; margin-bottom:1rem;">パスコード入力</div>
+      <div class="dots"><div class="dot" id="d0"></div><div class="dot" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div></div>
+      <div class="numpad">
+        ${[1,2,3,4,5,6,7,8,9,0].map(n => `<div class="key" onclick="press('${n}')">${n}</div>`).join('')}
+      </div>
+      <div id="pin-err" style="color:red; font-size:12px; text-align:center; margin-top:10px;"></div>
+    </div></div>`;
+  } else {
+    area.innerHTML = '';
+  }
+}
+
+setInterval(syncFromServer, 5000);
+window.onload = () => { syncFromServer(); render(); };
+</script>
+</body>
+</html>
